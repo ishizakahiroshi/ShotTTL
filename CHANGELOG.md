@@ -24,4 +24,4 @@ Initial release. Give your screenshots a TTL.
 - Automation guides for Windows Task Scheduler, Linux cron, and macOS launchd.
 - README in English and Japanese, including an AI-agent auto-setup prompt.
 
-[0.1.0]: https://github.com/USER/ShotTTL/releases/tag/v0.1.0
+[0.1.0]: https://github.com/ishizakahiroshi/ShotTTL/releases/tag/v0.1.0
