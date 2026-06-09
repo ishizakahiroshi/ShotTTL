@@ -5,12 +5,16 @@
 スクリーンショットに寿命をつける。
 
 <p align="center">
-  <img src="img/ShotTTL.png" alt="ShotTTL" width="720">
+  <img src="assets/ShotTTL.png" alt="ShotTTL" width="720">
 </p>
 
 ShotTTL は、スクリーンショットフォルダが散らかり続けるのを防ぐ小さなツールです。残したい期間を指定してスクリプトを実行すると、古いスクリーンショットをゴミ箱へ移動します。
 
 スクリーンショットを撮るツールではありません。Snipping Tool、macOS標準スクリーンショット、GNOME Screenshot、Flameshot など、今使っている撮影ツールはそのまま使えます。
+
+<p align="center">
+  <img src="assets/how-it-works.png" alt="ShotTTL の仕組み: 散らかったスクショフォルダから最近のものだけ残し、古いものはゴミ箱へ" width="860">
+</p>
 
 ## 使うとどうなるか
 

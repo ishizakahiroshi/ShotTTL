@@ -269,6 +269,7 @@ function Move-ToTrash {
 function Remove-OldImages {
     param(
         [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
         [array]$Candidates,
 
         [Parameter(Mandatory = $true)]

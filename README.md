@@ -5,12 +5,16 @@
 Give your screenshots a TTL.
 
 <p align="center">
-  <img src="img/ShotTTL.png" alt="ShotTTL" width="720">
+  <img src="assets/ShotTTL.png" alt="ShotTTL" width="720">
 </p>
 
 ShotTTL keeps your screenshot folder from turning into a junk drawer. Tell it how long screenshots should live, run one small script, and old screenshots go to the Trash.
 
 It does not replace your screenshot tool. Keep using Snipping Tool, macOS screenshots, GNOME Screenshot, Flameshot, or whatever you already use.
+
+<p align="center">
+  <img src="assets/how-it-works.png" alt="How ShotTTL works: a cluttered screenshots folder is swept to only the most recent files, old ones go to Trash" width="860">
+</p>
 
 ## What It Feels Like
 
