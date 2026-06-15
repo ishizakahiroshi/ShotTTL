@@ -2,31 +2,41 @@
 
 set -u
 
+if [ -z "${HOME:-}" ] || [ ! -d "$HOME" ]; then
+    printf 'ShotTTL: HOME is not set to an existing directory; refusing to run.\n' >&2
+    exit 2
+fi
+: "${PWD:=$(pwd)}"
+
 TARGET_DIR=""
 RETENTION_MINUTES=1440
 DELETE_MODE="Trash"
 DRY_RUN=0
 INCLUDE_SUBFOLDERS=0
 QUIET=0
+CREATE_TARGET_IF_MISSING=0
 LOG_DIR="${HOME}/.shotttl/logs"
 LOG_FILE="${LOG_DIR}/shotttl_$(date +%Y%m%d).log"
+TRASH_BACKEND_NOT_FOUND=127
 
 show_help() {
     cat <<'HELP'
 ShotTTL - Give your screenshots a TTL.
 
 Usage:
-  ./shotttl.sh [--target PATH] [--keep 24h] [--trash|--delete] [--dry-run]
+  ./shotttl.sh [--target PATH] [--keep N(m|h|d)] [--trash|--delete] [--dry-run]
 
 Options:
   --target PATH              Screenshot folder to clean. Auto-detected when omitted.
-  --keep 30m|1h|24h|7d       Keep files modified within this period.
+  --keep N(m|h|d)            Keep files modified within this period (e.g. 30m, 1h, 24h, 7d).
+                             Any positive N with one of m/h/d is accepted; units are case-insensitive.
   --retention-minutes MIN    Keep files modified within this many minutes. Default: 1440.
   --trash                    Move old images to trash. Default.
   --delete                   Permanently delete old images.
   --dry-run                  Show what would be removed without changing files.
   --include-subfolders       Include files in child folders. Default: off.
   --quiet                    Reduce console output. Logs are still written.
+  --create-target-if-missing Create the target folder when it does not exist.
   --help                     Show this help.
 
 Examples:
@@ -42,15 +52,19 @@ say() {
 }
 
 log() {
+    local level message safe_message
     level="$1"
     message="$2"
+    # Strip C0 control bytes and DEL so a malicious filename can't fake a log row.
+    safe_message=$(printf '%s' "$message" | tr -d '\000-\037\177')
 
     if mkdir -p "$LOG_DIR" 2>/dev/null; then
-        printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$message" >> "$LOG_FILE" 2>/dev/null || true
+        printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$safe_message" >> "$LOG_FILE" 2>/dev/null || true
     fi
 }
 
 format_bytes() {
+    local bytes
     bytes="$1"
     awk -v bytes="$bytes" 'BEGIN {
         if (bytes >= 1073741824) {
@@ -66,15 +80,16 @@ format_bytes() {
 }
 
 parse_keep_to_minutes() {
+    local value amount unit minutes
     value="$1"
 
-    if [[ ! "$value" =~ ^([0-9]+)([mhd])$ ]]; then
+    if [[ ! "$value" =~ ^([0-9]+)([mhdMHD])$ ]]; then
         printf 'Invalid --keep value: %s\n' "$value" >&2
         return 1
     fi
 
     amount="${BASH_REMATCH[1]}"
-    unit="${BASH_REMATCH[2]}"
+    unit=$(printf '%s' "${BASH_REMATCH[2]}" | tr 'MHD' 'mhd')
 
     case "$unit" in
         m) minutes="$amount" ;;
@@ -99,6 +114,7 @@ is_positive_integer() {
 }
 
 expand_path() {
+    local path
     path="$1"
 
     case "$path" in
@@ -110,6 +126,7 @@ expand_path() {
 }
 
 strip_trailing_slashes() {
+    local path
     path="$1"
 
     if [ "$path" = "/" ]; then
@@ -125,15 +142,26 @@ strip_trailing_slashes() {
 }
 
 normalize_path() {
+    local expanded normalized dir base resolved
     expanded="$(expand_path "$1")"
 
     if [ -d "$expanded" ]; then
-        normalized="$(cd "$expanded" 2>/dev/null && pwd -P)"
+        resolved="$(cd "$expanded" 2>/dev/null && pwd -P)"
+        if [ -n "$resolved" ]; then
+            normalized="$resolved"
+        else
+            normalized="$expanded"
+        fi
     else
         dir="$(dirname "$expanded")"
         base="$(basename "$expanded")"
         if [ -d "$dir" ]; then
-            normalized="$(cd "$dir" 2>/dev/null && pwd -P)/$base"
+            resolved="$(cd "$dir" 2>/dev/null && pwd -P)"
+            if [ -n "$resolved" ]; then
+                normalized="$resolved/$base"
+            else
+                normalized="$expanded"
+            fi
         else
             normalized="$expanded"
         fi
@@ -143,29 +171,44 @@ normalize_path() {
 }
 
 is_unsafe_target() {
-    target="$(normalize_path "$1")"
+    local raw target home_path expanded
+    raw="$1"
+    expanded="$(expand_path "$raw")"
+    target="$(normalize_path "$raw")"
     home_path="$(normalize_path "$HOME")"
 
     case "$target" in
         ""|"/") return 0 ;;
     esac
 
+    # If the user-supplied path itself is a symlink, the resolved target may
+    # silently escape both the allowlist and danger list (e.g. ~/Pictures
+    # symlinked into /tmp/attacker). Refuse the symlinked entry-point.
+    if [ -L "$expanded" ]; then
+        return 0
+    fi
+
+    # Allowlist of dedicated screenshot folders (compared post-resolution).
     case "$target" in
         "$home_path/Pictures/Screenshots"|"$home_path/.claude/screenshots"|"$home_path/Desktop/Screenshots")
             return 1
             ;;
     esac
 
+    # Danger list: refuse exact match AND any subfolder (path-prefix). The
+    # allowlist above already returned 1 for the dedicated screenshot dirs, so
+    # remaining subfolders of Desktop/Downloads/Documents/Pictures (e.g.
+    # ~/Documents/Reports) are correctly refused here.
     case "$target" in
-        "$home_path"|"$home_path/Desktop"|"$home_path/Downloads"|"$home_path/Documents"|"$home_path/Pictures")
-            return 0
-            ;;
+        "$home_path"|"$home_path/Desktop"|"$home_path/Downloads"|"$home_path/Documents"|"$home_path/Pictures") return 0 ;;
+        "$home_path/Desktop"/*|"$home_path/Downloads"/*|"$home_path/Documents"/*|"$home_path/Pictures"/*) return 0 ;;
     esac
 
     return 1
 }
 
 detect_default_target() {
+    local os_name configured candidates candidate
     os_name="$(uname -s 2>/dev/null || printf 'Unknown')"
 
     if [ "$os_name" = "Darwin" ] && command -v defaults >/dev/null 2>&1; then
@@ -193,6 +236,7 @@ EOF
 }
 
 is_image_file() {
+    local file lower
     file="$1"
     lower="$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')"
 
@@ -203,18 +247,21 @@ is_image_file() {
 }
 
 file_mtime_epoch() {
+    local file
     file="$1"
 
     stat -c '%Y' "$file" 2>/dev/null || stat -f '%m' "$file" 2>/dev/null
 }
 
 file_size_bytes() {
+    local file
     file="$1"
 
     stat -c '%s' "$file" 2>/dev/null || stat -f '%z' "$file" 2>/dev/null || wc -c < "$file"
 }
 
 unique_trash_path() {
+    local source trash_dir base destination timestamp name ext counter
     source="$1"
     trash_dir="$2"
     base="$(basename "$source")"
@@ -250,6 +297,7 @@ unique_trash_path() {
 }
 
 move_to_trash() {
+    local file os_name trash_dir destination status
     file="$1"
     os_name="$(uname -s 2>/dev/null || printf 'Unknown')"
 
@@ -257,8 +305,14 @@ move_to_trash() {
         trash_dir="$HOME/.Trash"
         mkdir -p "$trash_dir" || return 1
         destination="$(unique_trash_path "$file" "$trash_dir")"
-        mv "$file" "$destination"
-        return $?
+        # -n refuses to clobber if a racy concurrent writer created the
+        # destination after unique_trash_path's check; retry once with a
+        # freshly chosen name to absorb the TOCTOU window.
+        if ! mv -n "$file" "$destination" 2>/dev/null; then
+            destination="$(unique_trash_path "$file" "$trash_dir")"
+            mv -n "$file" "$destination" || return 1
+        fi
+        return 0
     fi
 
     if command -v gio >/dev/null 2>&1; then
@@ -281,10 +335,11 @@ move_to_trash() {
         return $?
     fi
 
-    return 2
+    return "$TRASH_BACKEND_NOT_FOUND"
 }
 
 cleanup() {
+    local target cutoff candidates deleted failed freed would_free find_command file relative base mtime size status reason
     target="$(normalize_path "$TARGET_DIR")"
     cutoff=$(( $(date +%s) - RETENTION_MINUTES * 60 ))
     candidates=0
@@ -342,7 +397,7 @@ cleanup() {
             else
                 status=$?
                 failed=$((failed + 1))
-                if [ "$status" -eq 2 ]; then
+                if [ "$status" -eq "$TRASH_BACKEND_NOT_FOUND" ]; then
                     reason="No supported trash command found; refusing to fall back to rm"
                 else
                     reason="Trash command failed with exit code ${status}"
@@ -441,6 +496,10 @@ while [ "$#" -gt 0 ]; do
             QUIET=1
             shift
             ;;
+        --create-target-if-missing)
+            CREATE_TARGET_IF_MISSING=1
+            shift
+            ;;
         --help|-h)
             show_help
             exit 0
@@ -466,9 +525,19 @@ if is_unsafe_target "$TARGET_DIR"; then
 fi
 
 if [ ! -d "$TARGET_DIR" ]; then
-    log "ERROR" "Target directory does not exist: ${TARGET_DIR}"
-    printf 'Target directory does not exist: %s\n' "$TARGET_DIR" >&2
-    exit 1
+    if [ "$CREATE_TARGET_IF_MISSING" -eq 1 ]; then
+        if mkdir -p "$TARGET_DIR" 2>/dev/null; then
+            log "INFO" "Created missing target directory: ${TARGET_DIR}"
+        else
+            log "ERROR" "Failed to create target directory: ${TARGET_DIR}"
+            printf 'Failed to create target directory: %s\n' "$TARGET_DIR" >&2
+            exit 1
+        fi
+    else
+        log "ERROR" "Target directory does not exist: ${TARGET_DIR}"
+        printf 'Target directory does not exist: %s. Use --create-target-if-missing to create it.\n' "$TARGET_DIR" >&2
+        exit 1
+    fi
 fi
 
 cleanup

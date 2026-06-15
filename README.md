@@ -192,7 +192,8 @@ ShotTTL is intentionally conservative:
 - Trash mode is the default.
 - Permanent deletion only happens with `-DeleteMode Delete` or `--delete`.
 - Dry-run is available before every real cleanup.
-- Broad folders such as the home folder, Desktop, Downloads, Documents, and Pictures are refused.
+- Broad folders such as the home folder, Desktop, Downloads, Documents, and Pictures are refused — including any subfolder of those locations (e.g. `Documents\Reports`). The only exceptions are the dedicated screenshot folders listed under `-TargetDir` / `--target` above.
+- Reparse points (Windows junctions / symbolic links, Unix symlinks) supplied as the target are refused so the safety check cannot be bypassed through a redirected folder.
 - Hidden/system files are skipped on Windows.
 - Dotfiles are skipped on macOS / Linux.
 - Subfolders are excluded unless explicitly requested.
@@ -209,7 +210,7 @@ ShotTTL is intentionally conservative:
   -DeleteMode Trash
 ```
 
-- `-TargetDir`: screenshot folder to clean. When omitted, ShotTTL tries common screenshot folders.
+- `-TargetDir`: screenshot folder to clean. When omitted, ShotTTL tries common screenshot folders in this order: `%USERPROFILE%\OneDrive\Pictures\Screenshots`, `%USERPROFILE%\Pictures\Screenshots`, `%USERPROFILE%\Desktop\Screenshots`, `%USERPROFILE%\.claude\screenshots`. Reparse points (junctions / symbolic links) are refused.
 - `-RetentionMinutes`: keep files modified within this many minutes. Default: `1440`.
 - `-DeleteMode`: `Trash` or `Delete`. Default: `Trash`.
 - `-DryRun`: print and log candidates without removing files.
@@ -227,14 +228,15 @@ ShotTTL is intentionally conservative:
   --trash
 ```
 
-- `--target PATH`: screenshot folder to clean. When omitted, ShotTTL tries common screenshot-only folders.
-- `--keep 30m|1h|24h|7d`: keep files modified within this period.
+- `--target PATH`: screenshot folder to clean. When omitted, ShotTTL tries common screenshot-only folders in this order: `~/Pictures/Screenshots`, `~/.claude/screenshots`, `~/Desktop/Screenshots`. On macOS the configured screenshot location (`defaults read com.apple.screencapture location`) is tried first when it points at a screenshot-only folder.
+- `--keep N(m|h|d)`: keep files modified within this period. Any positive integer with one of `m`/`h`/`d` is accepted (e.g. `30m`, `1h`, `24h`, `7d`, `15m`, `45d`). The unit letter is case-insensitive.
 - `--retention-minutes MIN`: keep files modified within this many minutes. Default: `1440`.
 - `--trash`: move old images to trash. Default.
 - `--delete`: permanently delete old images.
 - `--dry-run`: print and log candidates without removing files.
 - `--include-subfolders`: include files in child folders. Default: off.
 - `--quiet`: reduce console output while still writing logs.
+- `--create-target-if-missing`: create the target folder when it does not exist.
 - `--help`: show help.
 
 ## Logs

@@ -86,7 +86,11 @@ launchctl unload ~/Library/LaunchAgents/com.shotttl.cleanup.plist
 
 ## Full Disk Access
 
-Recent macOS releases gate access to folders like `~/Pictures` behind privacy controls (TCC). If the job logs no candidates even though old screenshots exist, grant the agent that runs ShotTTL — usually `/bin/bash` or your terminal — **Full Disk Access** under System Settings → Privacy & Security, then reload the LaunchAgent.
+Recent macOS releases gate access to folders like `~/Pictures` behind privacy controls (TCC). If the LaunchAgent logs no candidates even though old screenshots exist, try the following in order:
+
+1. Run `shotttl.sh` once interactively from Terminal first (`./scripts/unix/shotttl.sh --target ... --dry-run`) so any TCC consent prompt can be accepted while you are present to answer it.
+2. In **System Settings → Privacy & Security → Full Disk Access**, click `+` and add the ShotTTL script itself (`/path/to/ShotTTL/scripts/unix/shotttl.sh`), then `launchctl unload` and `launchctl load` the plist. On macOS 12+ TCC commonly attributes access to the responsible parent (the LaunchAgent / the script being executed), not to the shared interpreter binary, so allowlisting `/bin/bash` is rarely effective.
+3. If TCC keeps blocking, point `--target` at a folder outside `~/Pictures`, `~/Desktop`, `~/Documents`, and `~/Downloads` (all TCC-gated). For example, change the macOS screenshot save location in Screenshot.app (`Cmd+Shift+5` → Options → Save to) to a dedicated folder like `~/ShotsInbox`, and set `--target` to match.
 
 ## Verify the Schedule
 

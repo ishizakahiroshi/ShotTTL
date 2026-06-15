@@ -67,6 +67,8 @@ function Get-LogFile {
     return $Script:LogFile
 }
 
+$Script:LogEncoding = New-Object System.Text.UTF8Encoding($false)
+
 function Write-Log {
     param(
         [Parameter(Mandatory = $true)]
@@ -76,8 +78,10 @@ function Write-Log {
     )
 
     try {
-        $line = "{0} [{1}] {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Level, $Message
-        Add-Content -LiteralPath (Get-LogFile) -Value $line -Encoding UTF8
+        # 改行・タブ・C0/DEL 制御文字を空白へ正規化してログ 1 行性を保つ。
+        $sanitized = ($Message -replace '[\x00-\x1F\x7F]+', ' ')
+        $line = "{0} [{1}] {2}{3}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Level, $sanitized, [Environment]::NewLine
+        [System.IO.File]::AppendAllText((Get-LogFile), $line, $Script:LogEncoding)
     }
     catch {
         if (-not $Quiet) {
@@ -114,13 +118,38 @@ function Convert-ToFullPath {
     }
 }
 
-function Normalize-PathForCompare {
+function ConvertTo-NormalizedPath {
+    # 比較用にパスを正規化する。存在するパスは Get-Item.FullName で 8.3 短縮名を
+    # 長名へ展開し、denylist/allowlist の文字列一致回避を塞ぐ。
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path
     )
 
     $full = Convert-ToFullPath -Path $Path
+
+    try {
+        if (Test-Path -LiteralPath $full) {
+            $full = (Get-Item -LiteralPath $full -Force -ErrorAction Stop).FullName
+        }
+        else {
+            $parent = [System.IO.Path]::GetDirectoryName($full)
+            if (-not [string]::IsNullOrWhiteSpace($parent) -and (Test-Path -LiteralPath $parent)) {
+                $parentFull = (Get-Item -LiteralPath $parent -Force -ErrorAction Stop).FullName
+                $leaf = [System.IO.Path]::GetFileName($full)
+                if (-not [string]::IsNullOrWhiteSpace($leaf)) {
+                    $full = Join-Path -Path $parentFull -ChildPath $leaf
+                }
+                else {
+                    $full = $parentFull
+                }
+            }
+        }
+    }
+    catch {
+        # 解決失敗時は元の絶対パスのまま比較に進める（安全側で素通しは増えない）
+    }
+
     [char[]]$trimChars = @([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
     $trimmed = $full.TrimEnd($trimChars)
     if ([string]::IsNullOrWhiteSpace($trimmed)) {
@@ -130,20 +159,39 @@ function Normalize-PathForCompare {
     return $trimmed.ToLowerInvariant()
 }
 
+function Get-AllowedScreenshotDirs {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$UserProfile
+    )
+
+    return @(
+        (Join-Path $UserProfile "OneDrive\Pictures\Screenshots"),
+        (Join-Path $UserProfile "Pictures\Screenshots"),
+        (Join-Path $UserProfile "Desktop\Screenshots"),
+        (Join-Path $UserProfile ".claude\screenshots")
+    )
+}
+
 function Get-DefaultTargetDir {
     $userProfile = $env:USERPROFILE
     if ([string]::IsNullOrWhiteSpace($userProfile)) {
         $userProfile = $HOME
     }
 
-    $candidates = @(
-        (Join-Path $userProfile "OneDrive\Pictures\Screenshots"),
-        (Join-Path $userProfile "Pictures\Screenshots"),
-        (Join-Path $userProfile ".claude\screenshots")
-    )
+    $candidates = Get-AllowedScreenshotDirs -UserProfile $userProfile
 
     foreach ($candidate in $candidates) {
         if (Test-Path -LiteralPath $candidate -PathType Container) {
+            try {
+                $item = Get-Item -LiteralPath $candidate -Force -ErrorAction Stop
+                if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                    continue
+                }
+            }
+            catch {
+                continue
+            }
             return $candidate
         }
     }
@@ -161,10 +209,29 @@ function Test-UnsafeTargetDir {
         return $true
     }
 
-    $normalized = Normalize-PathForCompare -Path $Path
+    # UNC は現行用途（ローカルスクショ専用）の対象外なので一律拒否する。
+    if ($Path -match '^(\\\\|//)') {
+        return $true
+    }
+
+    # TargetDir 自身が ReparsePoint (junction / symbolic link) の場合は許可リストの
+    # 文字列一致を経由した実体ディレクトリのバイパスが起きるので無条件で拒否する。
+    try {
+        if (Test-Path -LiteralPath $Path) {
+            $targetItem = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+            if (($targetItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                return $true
+            }
+        }
+    }
+    catch {
+        # 解決失敗時は後段で再評価する（破壊的に倒さない）。
+    }
+
+    $normalized = ConvertTo-NormalizedPath -Path $Path
     $root = [System.IO.Path]::GetPathRoot((Convert-ToFullPath -Path $Path))
     if (-not [string]::IsNullOrWhiteSpace($root)) {
-        $normalizedRoot = Normalize-PathForCompare -Path $root
+        $normalizedRoot = ConvertTo-NormalizedPath -Path $root
         if ($normalized -eq $normalizedRoot) {
             return $true
         }
@@ -175,25 +242,43 @@ function Test-UnsafeTargetDir {
         $userProfile = $HOME
     }
 
-    $allowed = @(
-        (Join-Path $userProfile "OneDrive\Pictures\Screenshots"),
-        (Join-Path $userProfile "Pictures\Screenshots"),
-        (Join-Path $userProfile ".claude\screenshots")
-    ) | ForEach-Object { Normalize-PathForCompare -Path $_ }
+    $allowed = Get-AllowedScreenshotDirs -UserProfile $userProfile |
+        ForEach-Object { ConvertTo-NormalizedPath -Path $_ }
 
     if ($allowed -contains $normalized) {
         return $false
     }
 
-    $unsafe = @(
-        $userProfile,
+    # USERPROFILE itself is refused only as an exact match. AppData / Temp /
+    # other tooling under %USERPROFILE% must remain reachable as user-supplied
+    # targets (the Help example uses %TEMP%\shotttl-test).
+    $normalizedUserProfile = ConvertTo-NormalizedPath -Path $userProfile
+    if (-not [string]::IsNullOrWhiteSpace($normalizedUserProfile) -and $normalized -eq $normalizedUserProfile) {
+        return $true
+    }
+
+    # The well-known shell folders Desktop / Downloads / Documents / Pictures
+    # are refused both exactly and for any subfolder (path-prefix), so a
+    # mistyped or coerced target like "%USERPROFILE%\Documents\Reports" is
+    # rejected before any deletion happens.
+    $separator = [System.IO.Path]::DirectorySeparatorChar
+    $unsafeSubtrees = @(
         (Join-Path $userProfile "Desktop"),
         (Join-Path $userProfile "Downloads"),
         (Join-Path $userProfile "Documents"),
         (Join-Path $userProfile "Pictures")
-    ) | ForEach-Object { Normalize-PathForCompare -Path $_ }
+    ) | ForEach-Object { ConvertTo-NormalizedPath -Path $_ }
 
-    return ($unsafe -contains $normalized)
+    foreach ($u in $unsafeSubtrees) {
+        if ([string]::IsNullOrWhiteSpace($u)) {
+            continue
+        }
+        if ($normalized -eq $u -or $normalized.StartsWith($u + $separator)) {
+            return $true
+        }
+    }
+
+    return $false
 }
 
 function Format-Bytes {

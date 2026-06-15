@@ -51,3 +51,8 @@ Pass the same options you would pass to `shotttl.ps1`, after the VBS path:
 ```
 
 Use `-DeleteMode Delete` only when you intentionally want permanent deletion.
+
+Notes:
+
+- `run-hidden.vbs` always runs ShotTTL with `-Quiet` and no visible window, so there is no on-screen output even for `-DryRun`. To preview candidates interactively, run `shotttl.ps1` directly with `-DryRun` (see **Before Scheduling** above) and inspect `%APPDATA%\ShotTTL\logs`.
+- Inside quoted paths, do not include a trailing backslash (e.g. avoid `"...Screenshots\"`). Windows treats `\"` as an escaped quote, which can fold the next argument into the value. Use `"...Screenshots"` without a trailing slash.

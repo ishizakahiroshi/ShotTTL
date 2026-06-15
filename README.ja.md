@@ -193,7 +193,8 @@ ShotTTL は削除系ツールなので、安全側に倒しています。
 - デフォルトは Trash モードです。
 - 完全削除は `-DeleteMode Delete` または `--delete` 指定時だけです。
 - 実行前に dry-run で対象を確認できます。
-- ホームフォルダ、Desktop、Downloads、Documents、Pictures など広すぎるフォルダは拒否します。
+- ホームフォルダ、Desktop、Downloads、Documents、Pictures など広すぎるフォルダは拒否します。これらの**直下のサブフォルダ**（例: `Documents\Reports`）も同様に拒否します。例外は上記の `-TargetDir` / `--target` で列挙したスクリーンショット専用フォルダのみです。
+- target に Reparse Point（Windows の junction / シンボリックリンク、Unix の symlink）を指定された場合は拒否します。安全チェックがリダイレクト先フォルダ経由でバイパスされるのを防ぐためです。
 - Windows では Hidden/System ファイルをスキップします。
 - macOS / Linux ではドットファイルと隠しディレクトリ配下をスキップします。
 - サブフォルダは明示指定時だけ対象にします。
@@ -210,7 +211,7 @@ ShotTTL は削除系ツールなので、安全側に倒しています。
   -DeleteMode Trash
 ```
 
-- `-TargetDir`: 整理対象のスクリーンショットフォルダ。省略時はよく使われるスクショフォルダを自動検出します。
+- `-TargetDir`: 整理対象のスクリーンショットフォルダ。省略時は次の順で自動検出します: `%USERPROFILE%\OneDrive\Pictures\Screenshots` → `%USERPROFILE%\Pictures\Screenshots` → `%USERPROFILE%\Desktop\Screenshots` → `%USERPROFILE%\.claude\screenshots`。junction やシンボリックリンクは拒否します。
 - `-RetentionMinutes`: この分数以内に更新されたファイルを残します。デフォルトは `1440`。
 - `-DeleteMode`: `Trash` または `Delete`。デフォルトは `Trash`。
 - `-DryRun`: ファイルを消さず、対象候補だけを表示・ログ出力します。
@@ -228,14 +229,15 @@ ShotTTL は削除系ツールなので、安全側に倒しています。
   --trash
 ```
 
-- `--target PATH`: 整理対象のスクリーンショットフォルダ。省略時はスクショ専用フォルダを自動検出します。
-- `--keep 30m|1h|24h|7d`: 指定期間以内に更新されたファイルを残します。
+- `--target PATH`: 整理対象のスクリーンショットフォルダ。省略時はスクショ専用フォルダを次の順で自動検出します: `~/Pictures/Screenshots` → `~/.claude/screenshots` → `~/Desktop/Screenshots`。macOS では `defaults read com.apple.screencapture location` で設定済みのフォルダがスクショ専用なら、それを最優先で試します。
+- `--keep N(m|h|d)`: 指定期間以内に更新されたファイルを残します。任意の正整数と `m`/`h`/`d` を組み合わせて指定でき（例: `30m`、`1h`、`24h`、`7d`、`15m`、`45d`）、単位の大小は問いません。
 - `--retention-minutes MIN`: 分単位で保持時間を指定します。デフォルトは `1440`。
 - `--trash`: 古い画像をゴミ箱へ移動します。デフォルト。
 - `--delete`: 古い画像を完全削除します。
 - `--dry-run`: ファイルを消さず、対象候補だけを表示・ログ出力します。
 - `--include-subfolders`: サブフォルダも対象にします。デフォルトは無効。
 - `--quiet`: 標準出力を減らします。ログは残ります。
+- `--create-target-if-missing`: 対象フォルダが存在しない場合に作成します。
 - `--help`: ヘルプを表示します。
 
 ## ログ
