@@ -198,6 +198,7 @@ ShotTTL is intentionally conservative:
 - Dotfiles are skipped on macOS / Linux.
 - Subfolders are excluded unless explicitly requested.
 - On Linux, Trash mode never falls back to `rm` when no supported trash command is available.
+- On macOS, Trash mode moves files into `~/.Trash` via `mv`. Finder's "Put Back" menu item is **not** available for these files because the Put Back metadata is only written when Finder itself performs the move. Files can still be restored manually by dragging them out of the Trash.
 
 ## Options
 

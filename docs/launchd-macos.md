@@ -92,6 +92,10 @@ Recent macOS releases gate access to folders like `~/Pictures` behind privacy co
 2. In **System Settings → Privacy & Security → Full Disk Access**, click `+` and add the ShotTTL script itself (`/path/to/ShotTTL/scripts/unix/shotttl.sh`), then `launchctl unload` and `launchctl load` the plist. On macOS 12+ TCC commonly attributes access to the responsible parent (the LaunchAgent / the script being executed), not to the shared interpreter binary, so allowlisting `/bin/bash` is rarely effective.
 3. If TCC keeps blocking, point `--target` at a folder outside `~/Pictures`, `~/Desktop`, `~/Documents`, and `~/Downloads` (all TCC-gated). For example, change the macOS screenshot save location in Screenshot.app (`Cmd+Shift+5` → Options → Save to) to a dedicated folder like `~/ShotsInbox`, and set `--target` to match.
 
+## Trash Behavior on macOS
+
+Trash mode on macOS moves files into `~/.Trash` using `mv`. This keeps the script dependency-free and works under non-interactive launchd without requiring Automation/AppleEvents permission. Trade-off: Finder's **Put Back** menu item is not available for these files, because the Put Back metadata is only written when Finder itself performs the move. You can still restore files by dragging them out of the Trash, or by running `mv ~/.Trash/<file> <destination>` from Terminal.
+
 ## Verify the Schedule
 
 After the first run, check ShotTTL's own log plus the launchd output paths:

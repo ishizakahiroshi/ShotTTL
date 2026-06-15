@@ -315,24 +315,29 @@ move_to_trash() {
         return 0
     fi
 
+    # Try each available backend in turn. If one fails at runtime
+    # (e.g. gio across filesystems failing to write .trashinfo), fall
+    # through to the next. Never fall back to rm. Re-check existence
+    # before each attempt so a partial move by a prior backend does not
+    # produce a spurious failure.
     if command -v gio >/dev/null 2>&1; then
-        gio trash "$file"
-        return $?
+        [ -e "$file" ] || return 0
+        gio trash "$file" 2>>"$LOG_FILE" && return 0
     fi
 
     if command -v trash-put >/dev/null 2>&1; then
-        trash-put "$file"
-        return $?
+        [ -e "$file" ] || return 0
+        trash-put "$file" 2>>"$LOG_FILE" && return 0
     fi
 
     if command -v kioclient5 >/dev/null 2>&1; then
-        kioclient5 move "$file" trash:/
-        return $?
+        [ -e "$file" ] || return 0
+        kioclient5 move "$file" trash:/ 2>>"$LOG_FILE" && return 0
     fi
 
     if command -v kioclient >/dev/null 2>&1; then
-        kioclient move "$file" trash:/
-        return $?
+        [ -e "$file" ] || return 0
+        kioclient move "$file" trash:/ 2>>"$LOG_FILE" && return 0
     fi
 
     return "$TRASH_BACKEND_NOT_FOUND"
