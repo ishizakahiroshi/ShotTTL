@@ -194,7 +194,7 @@ ShotTTL は削除系ツールなので、安全側に倒しています。
 - 完全削除は `-DeleteMode Delete` または `--delete` 指定時だけです。
 - 実行前に dry-run で対象を確認できます。
 - ホームフォルダ、Desktop、Downloads、Documents、Pictures など広すぎるフォルダは拒否します。これらの**直下のサブフォルダ**（例: `Documents\Reports`）も同様に拒否します。例外は上記の `-TargetDir` / `--target` で列挙したスクリーンショット専用フォルダのみです。
-- target に Reparse Point（Windows の junction / シンボリックリンク、Unix の symlink）を指定された場合は拒否します。安全チェックがリダイレクト先フォルダ経由でバイパスされるのを防ぐためです。
+- target に Reparse Point / symlink を指定された場合は拒否します。Unix ではパス途中の中間 symlink（例: `~/Pictures` 自体が symlink）も拒否し、許可・拒否判定のすり抜けを防ぎます。Windows では `-IncludeSubfolders` 時に reparse point ディレクトリ（junction / ディレクトリ symlink）へ降りません。
 - Windows では Hidden/System ファイルをスキップします。
 - macOS / Linux ではドットファイルと隠しディレクトリ配下をスキップします。
 - サブフォルダは明示指定時だけ対象にします。

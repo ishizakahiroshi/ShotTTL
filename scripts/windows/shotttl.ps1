@@ -49,7 +49,9 @@ Examples:
 }
 
 function Get-LogFile {
-    if ($Script:LogFile) {
+    # 日跨ぎ実行でも正しい日付ファイルへ書くため、日付キーが変わったら再解決する。
+    $today = Get-Date -Format "yyyyMMdd"
+    if ($Script:LogFile -and $Script:LogDate -eq $today) {
         return $Script:LogFile
     }
 
@@ -63,11 +65,14 @@ function Get-LogFile {
         New-Item -ItemType Directory -Path $logDir -Force | Out-Null
     }
 
-    $Script:LogFile = Join-Path $logDir ("shotttl_{0}.log" -f (Get-Date -Format "yyyyMMdd"))
+    $Script:LogDate = $today
+    $Script:LogFile = Join-Path $logDir ("shotttl_{0}.log" -f $today)
     return $Script:LogFile
 }
 
 $Script:LogEncoding = New-Object System.Text.UTF8Encoding($false)
+$Script:LogDate = $null
+$Script:TrashBackend = $null
 
 function Write-Log {
     param(
@@ -81,7 +86,21 @@ function Write-Log {
         # 改行・タブ・C0/DEL 制御文字を空白へ正規化してログ 1 行性を保つ。
         $sanitized = ($Message -replace '[\x00-\x1F\x7F]+', ' ')
         $line = "{0} [{1}] {2}{3}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Level, $sanitized, [Environment]::NewLine
-        [System.IO.File]::AppendAllText((Get-LogFile), $line, $Script:LogEncoding)
+        # FileShare.ReadWrite で同時実行時の共有違反を緩和する。
+        $logPath = Get-LogFile
+        $bytes = $Script:LogEncoding.GetBytes($line)
+        $stream = [System.IO.File]::Open(
+            $logPath,
+            [System.IO.FileMode]::Append,
+            [System.IO.FileAccess]::Write,
+            [System.IO.FileShare]::ReadWrite
+        )
+        try {
+            $stream.Write($bytes, 0, $bytes.Length)
+        }
+        finally {
+            $stream.Dispose()
+        }
     }
     catch {
         if (-not $Quiet) {
@@ -297,6 +316,36 @@ function Format-Bytes {
     return ("{0} B" -f $Bytes)
 }
 
+function Test-IsSkippableFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.IO.FileSystemInfo]$Item,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$Extensions,
+
+        [Parameter(Mandatory = $true)]
+        [datetime]$Limit
+    )
+
+    $attributes = $Item.Attributes
+    $isHidden = (($attributes -band [System.IO.FileAttributes]::Hidden) -ne 0)
+    $isSystem = (($attributes -band [System.IO.FileAttributes]::System) -ne 0)
+    $isReparsePoint = (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
+    $extension = $Item.Extension.ToLowerInvariant()
+
+    if ($isHidden -or $isSystem -or $isReparsePoint) {
+        return $true
+    }
+    if ($Extensions -notcontains $extension) {
+        return $true
+    }
+    if ($Item.LastWriteTime -ge $Limit) {
+        return $true
+    }
+    return $false
+}
+
 function Get-CleanupCandidates {
     param(
         [Parameter(Mandatory = $true)]
@@ -310,29 +359,92 @@ function Get-CleanupCandidates {
 
     $limit = (Get-Date).AddMinutes(-1 * $Minutes)
     $extensions = @(".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
+    $results = New-Object System.Collections.Generic.List[System.IO.FileInfo]
 
-    $params = @{
-        LiteralPath = $Path
-        File = $true
-        ErrorAction = "Stop"
+    # 自前 BFS: reparse point ディレクトリ（junction/symlink）へは入らない。
+    # 現行 Get-ChildItem -Recurse は既定で junction を辿らないが、将来の挙動差と
+    # -FollowSymlink 相当の事故を防ぐため明示的に境界を守る。
+    $queue = New-Object System.Collections.Generic.Queue[string]
+    $queue.Enqueue($Path)
+
+    while ($queue.Count -gt 0) {
+        $dir = $queue.Dequeue()
+        $children = Get-ChildItem -LiteralPath $dir -Force -ErrorAction Stop
+        foreach ($child in $children) {
+            $attributes = $child.Attributes
+            $isReparsePoint = (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
+            if ($child.PSIsContainer) {
+                if ($Recurse -and (-not $isReparsePoint)) {
+                    $isHiddenDir = (($attributes -band [System.IO.FileAttributes]::Hidden) -ne 0)
+                    $isSystemDir = (($attributes -band [System.IO.FileAttributes]::System) -ne 0)
+                    if (-not $isHiddenDir -and -not $isSystemDir) {
+                        $queue.Enqueue($child.FullName)
+                    }
+                }
+                continue
+            }
+
+            if (-not (Test-IsSkippableFile -Item $child -Extensions $extensions -Limit $limit)) {
+                $results.Add([System.IO.FileInfo]$child) | Out-Null
+            }
+        }
     }
 
-    if ($Recurse) {
-        $params["Recurse"] = $true
+    return $results
+}
+
+function Initialize-TrashBackend {
+    if ($Script:TrashBackend) {
+        return $Script:TrashBackend
     }
 
-    Get-ChildItem @params | Where-Object {
-        $attributes = $_.Attributes
-        $isHidden = (($attributes -band [System.IO.FileAttributes]::Hidden) -ne 0)
-        $isSystem = (($attributes -band [System.IO.FileAttributes]::System) -ne 0)
-        $isReparsePoint = (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
-        $extension = $_.Extension.ToLowerInvariant()
+    try {
+        Add-Type -AssemblyName Microsoft.VisualBasic -ErrorAction Stop
+        # 型が実際に解決できるか触って確認する（アセンブリ名だけ通る環境差を吸収）。
+        $null = [Microsoft.VisualBasic.FileIO.FileSystem]
+        $null = [Microsoft.VisualBasic.FileIO.UIOption]
+        $null = [Microsoft.VisualBasic.FileIO.RecycleOption]
+        $Script:TrashBackend = "VisualBasic"
+    }
+    catch {
+        try {
+            $null = New-Object -ComObject Shell.Application
+            $Script:TrashBackend = "ShellApplication"
+            Write-Log "Microsoft.VisualBasic.FileIO unavailable; using Shell.Application trash backend." "WARN"
+        }
+        catch {
+            $Script:TrashBackend = "None"
+            throw "No trash backend available (Microsoft.VisualBasic.FileIO and Shell.Application both failed)."
+        }
+    }
 
-        (-not $isHidden) -and
-            (-not $isSystem) -and
-            (-not $isReparsePoint) -and
-            ($extensions -contains $extension) -and
-            ($_.LastWriteTime -lt $limit)
+    return $Script:TrashBackend
+}
+
+function Move-ToTrashViaShell {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    # Shell.Application 経由のゴミ箱移動。UI 無しフラグ相当の verb は環境差があるため、
+    # 親フォルダ Namespace + ParseName + InvokeVerb("delete") を使い、完了後に消失を確認する。
+    $full = (Get-Item -LiteralPath $Path -Force -ErrorAction Stop).FullName
+    $directoryPath = [System.IO.Path]::GetDirectoryName($full)
+    $fileName = [System.IO.Path]::GetFileName($full)
+    $shell = New-Object -ComObject Shell.Application
+    $folder = $shell.NameSpace($directoryPath)
+    if ($null -eq $folder) {
+        throw "Shell.Application could not open folder: $directoryPath"
+    }
+    $item = $folder.ParseName($fileName)
+    if ($null -eq $item) {
+        throw "Shell.Application could not resolve item: $full"
+    }
+    $item.InvokeVerb("delete")
+    Start-Sleep -Milliseconds 50
+    if (Test-Path -LiteralPath $full) {
+        throw "Shell.Application delete verb did not remove file: $full"
     }
 }
 
@@ -342,13 +454,22 @@ function Move-ToTrash {
         [string]$Path
     )
 
-    Add-Type -AssemblyName Microsoft.VisualBasic
-
-    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
-        $Path,
-        [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,
-        [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin
-    )
+    $backend = Initialize-TrashBackend
+    switch ($backend) {
+        "VisualBasic" {
+            [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
+                $Path,
+                [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,
+                [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin
+            )
+        }
+        "ShellApplication" {
+            Move-ToTrashViaShell -Path $Path
+        }
+        default {
+            throw "No trash backend available."
+        }
+    }
 }
 
 function Remove-OldImages {

@@ -16,7 +16,6 @@ INCLUDE_SUBFOLDERS=0
 QUIET=0
 CREATE_TARGET_IF_MISSING=0
 LOG_DIR="${HOME}/.shotttl/logs"
-LOG_FILE="${LOG_DIR}/shotttl_$(date +%Y%m%d).log"
 TRASH_BACKEND_NOT_FOUND=127
 
 show_help() {
@@ -52,14 +51,19 @@ say() {
 }
 
 log() {
-    local level message safe_message
+    local level message safe_message log_file
     level="$1"
     message="$2"
     # Strip C0 control bytes and DEL so a malicious filename can't fake a log row.
     safe_message=$(printf '%s' "$message" | tr -d '\000-\037\177')
+    # Resolve log path per call so a day-crossing long run lands on the new file.
+    log_file="${LOG_DIR}/shotttl_$(date +%Y%m%d).log"
 
     if mkdir -p "$LOG_DIR" 2>/dev/null; then
-        printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$safe_message" >> "$LOG_FILE" 2>/dev/null || true
+        # Prefer owner-only logs on shared hosts (best-effort; ignore failure).
+        chmod 700 "$LOG_DIR" 2>/dev/null || true
+        printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$safe_message" >> "$log_file" 2>/dev/null || true
+        chmod 600 "$log_file" 2>/dev/null || true
     fi
 }
 
@@ -170,10 +174,39 @@ normalize_path() {
     strip_trailing_slashes "$normalized"
 }
 
+# Return 0 if any path component (including intermediate dirs) is a symlink.
+# Used to block allowlist/denylist escapes via e.g. ~/Pictures -> /evil.
+path_has_symlink_component() {
+    local path cur rest part
+    path="$(strip_trailing_slashes "$1")"
+    case "$path" in
+        /*) rest="${path#/}" ;;
+        *) return 1 ;;
+    esac
+
+    cur=""
+    while [ -n "$rest" ]; do
+        part="${rest%%/*}"
+        if [ "$part" = "$rest" ]; then
+            rest=""
+        else
+            rest="${rest#*/}"
+        fi
+        [ -z "$part" ] && continue
+        cur="$cur/$part"
+        if [ -L "$cur" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 is_unsafe_target() {
-    local raw target home_path expanded
+    local raw target home_path expanded home_expanded
     raw="$1"
     expanded="$(expand_path "$raw")"
+    expanded="$(strip_trailing_slashes "$expanded")"
+    home_expanded="$(strip_trailing_slashes "$(expand_path "$HOME")")"
     target="$(normalize_path "$raw")"
     home_path="$(normalize_path "$HOME")"
 
@@ -181,14 +214,25 @@ is_unsafe_target() {
         ""|"/") return 0 ;;
     esac
 
-    # If the user-supplied path itself is a symlink, the resolved target may
-    # silently escape both the allowlist and danger list (e.g. ~/Pictures
-    # symlinked into /tmp/attacker). Refuse the symlinked entry-point.
-    if [ -L "$expanded" ]; then
+    # Refuse if the entry point OR any intermediate component is a symlink.
+    # Intermediate links (e.g. ~/Pictures -> /tmp/attacker) otherwise resolve
+    # outside both the allowlist and the home danger prefixes and get allowed.
+    if path_has_symlink_component "$expanded"; then
         return 0
     fi
 
+    # Lexical path under $HOME but resolved path escaped $HOME → refuse.
+    case "$expanded" in
+        "$home_expanded"|"$home_expanded"/*)
+            case "$target" in
+                "$home_path"|"$home_path"/*) ;;
+                *) return 0 ;;
+            esac
+            ;;
+    esac
+
     # Allowlist of dedicated screenshot folders (compared post-resolution).
+    # Paths are also normalized so minor . / .. forms still match.
     case "$target" in
         "$home_path/Pictures/Screenshots"|"$home_path/.claude/screenshots"|"$home_path/Desktop/Screenshots")
             return 1
@@ -308,9 +352,14 @@ move_to_trash() {
         # -n refuses to clobber if a racy concurrent writer created the
         # destination after unique_trash_path's check; retry once with a
         # freshly chosen name to absorb the TOCTOU window.
-        if ! mv -n "$file" "$destination" 2>/dev/null; then
+        # BSD mv -n can return 0 as a silent no-op when the destination
+        # already exists — always verify the source disappeared.
+        if ! mv -n "$file" "$destination" 2>/dev/null || [ -e "$file" ]; then
             destination="$(unique_trash_path "$file" "$trash_dir")"
             mv -n "$file" "$destination" || return 1
+            if [ -e "$file" ]; then
+                return 1
+            fi
         fi
         return 0
     fi
@@ -320,24 +369,29 @@ move_to_trash() {
     # through to the next. Never fall back to rm. Re-check existence
     # before each attempt so a partial move by a prior backend does not
     # produce a spurious failure.
+    # stderr goes to the daily log (resolved per call) so cron MAILTO
+    # is not flooded; diagnostic detail is preserved.
+    log_file="${LOG_DIR}/shotttl_$(date +%Y%m%d).log"
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+
     if command -v gio >/dev/null 2>&1; then
         [ -e "$file" ] || return 0
-        gio trash "$file" 2>>"$LOG_FILE" && return 0
+        gio trash "$file" 2>>"$log_file" && return 0
     fi
 
     if command -v trash-put >/dev/null 2>&1; then
         [ -e "$file" ] || return 0
-        trash-put "$file" 2>>"$LOG_FILE" && return 0
+        trash-put "$file" 2>>"$log_file" && return 0
     fi
 
     if command -v kioclient5 >/dev/null 2>&1; then
         [ -e "$file" ] || return 0
-        kioclient5 move "$file" trash:/ 2>>"$LOG_FILE" && return 0
+        kioclient5 move "$file" trash:/ 2>>"$log_file" && return 0
     fi
 
     if command -v kioclient >/dev/null 2>&1; then
         [ -e "$file" ] || return 0
-        kioclient move "$file" trash:/ 2>>"$LOG_FILE" && return 0
+        kioclient move "$file" trash:/ 2>>"$log_file" && return 0
     fi
 
     return "$TRASH_BACKEND_NOT_FOUND"
@@ -394,11 +448,20 @@ cleanup() {
             continue
         fi
 
+        # TOCTOU: re-validate immediately before destructive action so a
+        # path swapped to a symlink after find cannot redirect the delete.
+        if [ -L "$file" ] || [ ! -f "$file" ]; then
+            failed=$((failed + 1))
+            log "ERROR" "Failed to remove ${file}: path is no longer a regular non-symlink file"
+            say "Failed: $file (path is no longer a regular non-symlink file)"
+            continue
+        fi
+
         if [ "$DELETE_MODE" = "Trash" ]; then
             if move_to_trash "$file"; then
                 deleted=$((deleted + 1))
                 freed=$((freed + size))
-                log "INFO" "Moved to trash: ${file} ($(format_bytes "$size"))"
+                log "INFO" "Removed via Trash: ${file} ($(format_bytes "$size"))"
             else
                 status=$?
                 failed=$((failed + 1))
@@ -414,7 +477,7 @@ cleanup() {
             if rm -f -- "$file"; then
                 deleted=$((deleted + 1))
                 freed=$((freed + size))
-                log "INFO" "Deleted: ${file} ($(format_bytes "$size"))"
+                log "INFO" "Removed via Delete: ${file} ($(format_bytes "$size"))"
             else
                 failed=$((failed + 1))
                 log "ERROR" "Failed to delete ${file}"
@@ -476,9 +539,10 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         --retention-minutes=*)
-            value="${1#--retention-minutes=}"
-            is_positive_integer "$value" || { printf 'Retention must be between 1 and 525600 minutes.\n' >&2; exit 1; }
-            RETENTION_MINUTES="$value"
+            _retention_value="${1#--retention-minutes=}"
+            is_positive_integer "$_retention_value" || { printf 'Retention must be between 1 and 525600 minutes.\n' >&2; exit 1; }
+            RETENTION_MINUTES="$_retention_value"
+            unset _retention_value
             shift
             ;;
         --trash)

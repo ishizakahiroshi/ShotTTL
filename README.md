@@ -193,7 +193,7 @@ ShotTTL is intentionally conservative:
 - Permanent deletion only happens with `-DeleteMode Delete` or `--delete`.
 - Dry-run is available before every real cleanup.
 - Broad folders such as the home folder, Desktop, Downloads, Documents, and Pictures are refused — including any subfolder of those locations (e.g. `Documents\Reports`). The only exceptions are the dedicated screenshot folders listed under `-TargetDir` / `--target` above.
-- Reparse points (Windows junctions / symbolic links, Unix symlinks) supplied as the target are refused so the safety check cannot be bypassed through a redirected folder.
+- Reparse points / symlinks as the target are refused. On Unix, intermediate symlink components in the path (e.g. `~/Pictures` itself being a symlink) are also refused so allow/deny checks cannot be escaped through redirection. On Windows, `-IncludeSubfolders` never descends into reparse-point directories (junctions / directory symlinks).
 - Hidden/system files are skipped on Windows.
 - Dotfiles are skipped on macOS / Linux.
 - Subfolders are excluded unless explicitly requested.
