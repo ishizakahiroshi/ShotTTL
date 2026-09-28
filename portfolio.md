@@ -1,4 +1,11 @@
 ---
+cover:
+  path: portfolio/overview-2026-09-28.jpg
+  alt: {ja: "ShotTTL の紹介動画", en: "ShotTTL overview video"}
+video:
+  provider: youtube
+  id: "3ldyU1ccT2o"
+  durationSeconds: 20
 schemaVersion: 1
 color: "#d4a728"
 initials: "st"
