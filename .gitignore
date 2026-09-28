@@ -8,3 +8,60 @@ docs/local
 
 # docsweep: backup snapshots (30-day retention, auto-cleanup)
 .docsweep/
+# === obsidian-link: managed ===
+/docs/obsidian/
+# === /obsidian-link: managed ===
+
+# Local promo video sources and renders
+/brag-output/
+
+# === project-init 推奨の追記（2026-09-28・templates/gitignore から不足分のみ） ===
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*.log
+*.jsonl
+*.tmp
+*.bak
+*.orig
+*.rej
+.commandcode/
+.cursor/
+.codex-tmp/
+opencode.json*
+.wrangler/
+.vercel/
+.netlify/
+.firebase/
+.turbo/
+.parcel-cache/
+.terraform/
+.serverless/
+**/supabase/.temp/
+.env
+.env.*
+!.env.example
+*.local
+*.local.*
+*.local.md
+*.local.json
+scripts/local/
+*.pem
+*.key
+*.p12
+*.pfx
+*.ppk
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+secrets.*
+*.secret.*
+*credential*
+.netrc
+.npmrc
+.pypirc
