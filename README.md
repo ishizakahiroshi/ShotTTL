@@ -37,7 +37,7 @@ Then you run ShotTTL:
 It shows what would be cleaned:
 
 ```text
-Would remove: /Users/you/Pictures/Screenshots/last-week-random.png
+Would remove: ~/Pictures/Screenshots/last-week-random.png
 ShotTTL dry-run completed.
 Candidates: 1
 Would free: 2.4 MB

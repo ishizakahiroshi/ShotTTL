@@ -111,7 +111,7 @@ ShotTTL は永続 DB を持たない。状態は (a) 対象ディレクトリ内
 | M7 | `scripts/unix/shotttl.sh` | パラメータ展開プレフィックスの `$target` 未クォート |
 | F1 | `README.md` | `run-hidden.vbs` が `-Quiet` を自動付与する点が未記述 |
 | F2 | `scripts/windows/settings.example.json` | CLI が PascalCase、設定例が camelCase でマッピング無し |
-| F3 | `docs/launchd-macos.md` | plist の `/Users/YOUR_USER/Pictures/Screenshots` が手順 3 推奨パスへ未更新 |
+| F3 | `docs/launchd-macos.md` | plist の `<HOME>/Pictures/Screenshots` が手順 3 推奨パスへ未更新 |
 | F4 | `README.md` | reparse point ファイルの Win/Unix 挙動差が未文書化 |
 | F5 | `docs/cron-linux.md` | cron 環境で `HOME` 未設定時の挙動が未記述 |
 | F3-linux-gio-failure-no-secondary-backend | `scripts/unix/shotttl.sh` | gio 実行時失敗で trash-put / kioclient へフォールバックしない |
