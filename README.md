@@ -159,9 +159,7 @@ wscript.exe .\scripts\windows\run-hidden.vbs -RetentionMinutes 60
 
 You can pass the usual Windows options after `run-hidden.vbs`:
 
-```text
-wscript.exe .\scripts\windows\run-hidden.vbs -TargetDir "C:\Users\you\Pictures\Screenshots" -RetentionMinutes 1440
-```
+`wscript.exe .\scripts\windows\run-hidden.vbs -TargetDir "C:\Users\you\Pictures\Screenshots" -RetentionMinutes 1440` <!-- doxguard: allow C:\Users\ -->
 
 In Task Scheduler, set **Program/script** to:
 

@@ -160,9 +160,7 @@ wscript.exe .\scripts\windows\run-hidden.vbs -RetentionMinutes 60
 
 例:
 
-```text
-wscript.exe .\scripts\windows\run-hidden.vbs -TargetDir "C:\Users\you\Pictures\Screenshots" -RetentionMinutes 1440
-```
+`wscript.exe .\scripts\windows\run-hidden.vbs -TargetDir "C:\Users\you\Pictures\Screenshots" -RetentionMinutes 1440` <!-- doxguard: allow C:\Users\ -->
 
 タスクスケジューラで動かす場合は、**Program/script** に以下を指定します。
 
