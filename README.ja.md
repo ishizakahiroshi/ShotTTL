@@ -37,7 +37,7 @@ Pictures/Screenshots/
 消える候補だけが表示されます。
 
 ```text
-Would remove: /Users/you/Pictures/Screenshots/last-week-random.png
+Would remove: ~/Pictures/Screenshots/last-week-random.png
 ShotTTL dry-run completed.
 Candidates: 1
 Would free: 2.4 MB
@@ -160,9 +160,7 @@ wscript.exe .\scripts\windows\run-hidden.vbs -RetentionMinutes 60
 
 例:
 
-```text
-wscript.exe .\scripts\windows\run-hidden.vbs -TargetDir "C:\Users\you\Pictures\Screenshots" -RetentionMinutes 1440
-```
+`wscript.exe .\scripts\windows\run-hidden.vbs -TargetDir "C:\Users\you\Pictures\Screenshots" -RetentionMinutes 1440` <!-- doxguard: allow C:\Users\ -->
 
 タスクスケジューラで動かす場合は、**Program/script** に以下を指定します。
 

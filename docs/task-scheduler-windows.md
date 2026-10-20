@@ -46,9 +46,7 @@ You can add ShotTTL options after the VBS path:
 
 Pass the same options you would pass to `shotttl.ps1`, after the VBS path:
 
-```text
-"C:\path\to\ShotTTL\scripts\windows\run-hidden.vbs" -TargetDir "C:\Users\you\Pictures\Screenshots" -RetentionMinutes 1440
-```
+`"C:\path\to\ShotTTL\scripts\windows\run-hidden.vbs" -TargetDir "C:\Users\you\Pictures\Screenshots" -RetentionMinutes 1440` <!-- doxguard: allow C:\Users\ -->
 
 Use `-DeleteMode Delete` only when you intentionally want permanent deletion.
 
