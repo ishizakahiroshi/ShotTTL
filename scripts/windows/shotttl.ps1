@@ -233,18 +233,24 @@ function Test-UnsafeTargetDir {
         return $true
     }
 
-    # TargetDir 自身が ReparsePoint (junction / symbolic link) の場合は許可リストの
-    # 文字列一致を経由した実体ディレクトリのバイパスが起きるので無条件で拒否する。
+    # Reject links anywhere in the entry path, not only at TargetDir itself.
+    # A plain leaf under a junction otherwise reaches files outside the checked
+    # lexical target. Check existing ancestors even when the leaf is missing.
     try {
-        if (Test-Path -LiteralPath $Path) {
-            $targetItem = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
-            if (($targetItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-                return $true
+        $cursor = Convert-ToFullPath -Path $Path
+        while (-not [string]::IsNullOrWhiteSpace($cursor)) {
+            if (Test-Path -LiteralPath $cursor -ErrorAction Stop) {
+                $targetItem = Get-Item -LiteralPath $cursor -Force -ErrorAction Stop
+                if (($targetItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                    return $true
+                }
             }
+            $cursor = [System.IO.Path]::GetDirectoryName($cursor)
         }
     }
     catch {
-        # 解決失敗時は後段で再評価する（破壊的に倒さない）。
+        # Unknown path metadata must not authorize destructive cleanup.
+        return $true
     }
 
     $normalized = ConvertTo-NormalizedPath -Path $Path
