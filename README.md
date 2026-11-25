@@ -37,7 +37,7 @@ Then you run ShotTTL:
 It shows what would be cleaned:
 
 ```text
-Would remove: /Users/you/Pictures/Screenshots/last-week-random.png
+Would remove: /captures/screenshots/last-week-random.png
 ShotTTL dry-run completed.
 Candidates: 1
 Would free: 2.4 MB
@@ -160,7 +160,7 @@ wscript.exe .\scripts\windows\run-hidden.vbs -RetentionMinutes 60
 You can pass the usual Windows options after `run-hidden.vbs`:
 
 ```text
-wscript.exe .\scripts\windows\run-hidden.vbs -TargetDir "C:\Users\you\Pictures\Screenshots" -RetentionMinutes 1440
+wscript.exe .\scripts\windows\run-hidden.vbs -TargetDir "C:\Captures\Screenshots" -RetentionMinutes 1440
 ```
 
 In Task Scheduler, set **Program/script** to:
@@ -239,6 +239,25 @@ ShotTTL is intentionally conservative:
 - `--quiet`: reduce console output while still writing logs.
 - `--create-target-if-missing`: create the target folder when it does not exist.
 - `--help`: show help.
+
+### Optional recent-copy mode (Windows)
+
+Create a dedicated destination directory first. Preview eligible images with
+`shotttl.ps1 -TargetDir C:\Captures -CopyTo W:\Incoming -DryRun`.
+Use `-WatchCopy` instead of `-DryRun` to poll every two seconds, or omit both for one pass.
+Copy mode never runs source cleanup. Start it separately from your existing cleanup task.
+It processes top-level images modified within `-CopyWindowMinutes` (default 30);
+use `-CopySince` with an ISO timestamp to exclude captures made before activation.
+While offline it retries, and on reconnection sends only still-eligible images.
+The final image becomes visible by rename after the copy completes. The filename
+contains the source modification time in UTC for ordering and expiration.
+
+To expire copies while the sender is offline, schedule
+`python3 scripts/unix/expire-copies.py /absolute/receiver/directory --minutes 30 --apply`
+once per minute on the receiving host (Python 3.8+). Omit `--apply` to preview.
+Reserve this directory and the generated `shotttl-` and `.shotttl-` names for this job.
+Only matching expired generated names are removed, without recursing. Move images
+you want to keep to another folder.
 
 ## Logs
 

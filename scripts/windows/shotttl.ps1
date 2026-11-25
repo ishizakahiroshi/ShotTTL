@@ -16,7 +16,14 @@ param(
 
     [switch]$CreateTargetIfMissing,
 
-    [switch]$Help
+    [switch]$Help,
+
+    [ValidateNotNullOrEmpty()]
+    [string]$CopyTo,
+    [switch]$WatchCopy,
+    [ValidateRange(1, 525600)]
+    [int]$CopyWindowMinutes = 30,
+    [datetimeoffset]$CopySince = [datetimeoffset]::MinValue
 )
 
 Set-StrictMode -Version 2.0
@@ -32,6 +39,10 @@ Usage:
   .\shotttl.ps1 [-TargetDir PATH] [-RetentionMinutes MINUTES] [-DeleteMode Trash|Delete] [-DryRun]
 
 Options:
+  -CopyTo PATH              Only copy recent images to an existing dedicated folder.
+  -WatchCopy                Repeat copy passes until stopped (requires -CopyTo).
+  -CopyWindowMinutes MIN    Maximum source age to copy; default 30 minutes.
+  -CopySince DATE           Optional first eligible source timestamp (ISO 8601).
   -TargetDir PATH           Screenshot folder to clean. Auto-detected when omitted.
   -RetentionMinutes MIN     Keep files modified within this many minutes. Default: 1440.
   -DeleteMode MODE          Trash or Delete. Default: Trash.
@@ -536,6 +547,13 @@ if ($Help) {
 }
 
 try {
+    $copyMode = $PSBoundParameters.ContainsKey('CopyTo')
+    if (-not $copyMode -and ($WatchCopy -or $PSBoundParameters.ContainsKey('CopySince') -or $PSBoundParameters.ContainsKey('CopyWindowMinutes'))) {
+        throw 'Copy options require -CopyTo.'
+    }
+    if ($copyMode -and ($IncludeSubfolders -or $CreateTargetIfMissing -or $PSBoundParameters.ContainsKey('DeleteMode') -or $PSBoundParameters.ContainsKey('RetentionMinutes'))) {
+        throw 'Copy mode cannot be combined with cleanup options.'
+    }
     if ([string]::IsNullOrWhiteSpace($TargetDir)) {
         $TargetDir = Get-DefaultTargetDir
     }
@@ -558,6 +576,11 @@ try {
             Write-StderrLine ("Target directory does not exist: {0}. Use -CreateTargetIfMissing to create it." -f $TargetDir)
             exit 1
         }
+    }
+
+    if ($copyMode) {
+        . (Join-Path $PSScriptRoot 'copy-recent.ps1') -Source $TargetDir -Destination (Convert-ToFullPath -Path $CopyTo) -Minutes $CopyWindowMinutes -Since $CopySince.UtcDateTime -Watch:$WatchCopy -Preview:$DryRun
+        exit 0
     }
 
     Write-Log ("Run started. Target={0}; RetentionMinutes={1}; DeleteMode={2}; DryRun={3}; IncludeSubfolders={4}" -f $TargetDir, $RetentionMinutes, $DeleteMode, [bool]$DryRun, [bool]$IncludeSubfolders)

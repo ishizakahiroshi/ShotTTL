@@ -37,7 +37,7 @@ Pictures/Screenshots/
 消える候補だけが表示されます。
 
 ```text
-Would remove: /Users/you/Pictures/Screenshots/last-week-random.png
+Would remove: /captures/screenshots/last-week-random.png
 ShotTTL dry-run completed.
 Candidates: 1
 Would free: 2.4 MB
@@ -161,7 +161,7 @@ wscript.exe .\scripts\windows\run-hidden.vbs -RetentionMinutes 60
 例:
 
 ```text
-wscript.exe .\scripts\windows\run-hidden.vbs -TargetDir "C:\Users\you\Pictures\Screenshots" -RetentionMinutes 1440
+wscript.exe .\scripts\windows\run-hidden.vbs -TargetDir "C:\Captures\Screenshots" -RetentionMinutes 1440
 ```
 
 タスクスケジューラで動かす場合は、**Program/script** に以下を指定します。
@@ -240,6 +240,20 @@ ShotTTL は削除系ツールなので、安全側に倒しています。
 - `--quiet`: 標準出力を減らします。ログは残ります。
 - `--create-target-if-missing`: 対象フォルダが存在しない場合に作成します。
 - `--help`: ヘルプを表示します。
+
+### Windows の新着コピー（任意）
+
+受け側に専用フォルダを作り、まず `shotttl.ps1 -TargetDir C:\Captures -CopyTo W:\Incoming -DryRun` で対象を確認します。
+`-DryRun` を `-WatchCopy` に替えると2秒ごとに新着を確認します。どちらも付けないと1回で終了します。
+コピー時に元画像の削除は実行しません。既存の削除タスクとは別に起動してください。
+対象は直下の画像で、最終更新から `-CopyWindowMinutes`（既定30分）以内のものです。
+開始前の画像を除く場合は `-CopySince` に ISO 形式の日時を指定します。切断中は再試行し、復帰時点で期限内のものだけを送ります。
+コピー完了後に UTC の元更新時刻を含むファイル名で公開します。
+
+送信元の電源が切れていても期限を守るには、受け側で
+`python3 scripts/unix/expire-copies.py /absolute/receiver/directory --minutes 30 --apply` を毎分起動します（Python 3.8以上）。
+`--apply` を外すと削除予定の表示のみです。専用フォルダ内の生成名に一致する期限切れのファイルだけを処理します。
+長く保管したい画像は別フォルダへ移してください。
 
 ## ログ
 
