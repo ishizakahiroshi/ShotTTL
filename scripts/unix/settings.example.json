@@ -1,6 +1,6 @@
 {
-  "note": "Config file loading is planned for a future release. In v0.1.0, copy these values into CLI arguments. Replace YOUR_USER with your account name; ShotTTL does not expand $HOME or ~ inside this file.",
-  "targetDir": "/Users/YOUR_USER/Pictures/Screenshots",
+  "note": "Config file loading is planned for a future release. In v0.1.0, copy these values into CLI arguments. Replace <USERNAME> with your account name; ShotTTL does not expand $HOME or ~ inside this file.",
+  "targetDir": "/Users/<USERNAME>/Pictures/Screenshots",
   "retentionMinutes": 1440,
   "deleteMode": "Trash",
   "dryRun": false,

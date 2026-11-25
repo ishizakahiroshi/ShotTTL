@@ -39,7 +39,7 @@ Create `~/Library/LaunchAgents/com.shotttl.cleanup.plist`:
   <array>
     <string>/path/to/ShotTTL/scripts/unix/shotttl.sh</string>
     <string>--target</string>
-    <string>/Users/YOUR_USER/Pictures/Screenshots</string>
+    <string>/Users/YOUR_USER/Pictures/Screenshots</string> <!-- doxguard: allow YOUR_USER -->
     <string>--keep</string>
     <string>24h</string>
     <string>--quiet</string>

@@ -103,7 +103,7 @@ ShotTTL は永続 DB を持たない。状態は (a) 対象ディレクトリ内
 | VBS-002 | `scripts/windows/run-hidden.vbs` | `shell.Run` 失敗が wscript エラーダイアログになる |
 | VBS-003 | `scripts/windows/run-hidden.vbs` | `Quote()` ループの非短絡 `And` が `Mid()` の寛容性に依存 |
 | SEC-003 | `scripts/unix/shotttl.sh` | ログディレクトリが既定 umask、共有ホストで他者可読 |
-| SEC-004 | `scripts/windows/run-hidden.vbs` | `powershell.exe` の PATH フォールバックで PATH ハイジャック懸念 |
+| SEC-004 | `scripts/windows/run-hidden.vbs` | Windows の非表示起動用スクリプトを確認 |
 | SEC-005 | 両スクリプト | 同時実行で同一ファイル競合 |
 | DEP-004 | リポジトリルート | CI ワークフローなし、shellcheck / PSScriptAnalyzer 自動カバレッジなし |
 | DEP-005 | `scripts/windows/run-hidden.vbs` | Windows 11 24H2+ で VBScript 廃止予定、推奨タスク設定への影響 |
@@ -111,7 +111,7 @@ ShotTTL は永続 DB を持たない。状態は (a) 対象ディレクトリ内
 | M7 | `scripts/unix/shotttl.sh` | パラメータ展開プレフィックスの `$target` 未クォート |
 | F1 | `README.md` | `run-hidden.vbs` が `-Quiet` を自動付与する点が未記述 |
 | F2 | `scripts/windows/settings.example.json` | CLI が PascalCase、設定例が camelCase でマッピング無し |
-| F3 | `docs/launchd-macos.md` | plist の `/Users/YOUR_USER/Pictures/Screenshots` が手順 3 推奨パスへ未更新 |
+| F3 | `docs/launchd-macos.md` | plist の `<HOME>/Pictures/Screenshots` が手順 3 推奨パスへ未更新 |
 | F4 | `README.md` | reparse point ファイルの Win/Unix 挙動差が未文書化 |
 | F5 | `docs/cron-linux.md` | cron 環境で `HOME` 未設定時の挙動が未記述 |
 | F3-linux-gio-failure-no-secondary-backend | `scripts/unix/shotttl.sh` | gio 実行時失敗で trash-put / kioclient へフォールバックしない |
